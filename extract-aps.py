@@ -1,4 +1,5 @@
 from scapy.all import rdpcap, Dot11, Dot11Beacon, Dot11Elt
+import argparse
 
 def extract_aps_from_capture(cap_file):
     packets = rdpcap(cap_file)
@@ -28,7 +29,9 @@ def extract_aps_from_capture(cap_file):
     return ap_dict
 
 # Use on your .cap file
-aps = extract_aps_from_capture("scan-aps-04.cap")
+parser = argparse.ArgumentParser(description='WPA/WPA2 Password Cracker')
+parser.add_argument('cap_file', help='Path to the capture file (.cap)')
+aps = extract_aps_from_capture(parser.parse_args().cap_file)
 
 print("Access Points Found:")
 for bssid, info in aps.items():

