@@ -40,7 +40,6 @@ def build_b(ap_mac, sta_mac, anonce, snonce):
     nonces = sorted([anonce, snonce])
     return macs[0] + macs[1] + nonces[0] + nonces[1]
 
-# Load pcap and extract handshake
 def extract_handshake_info(capfile):
     packets = rdpcap(capfile)
 
@@ -51,6 +50,8 @@ def extract_handshake_info(capfile):
     snonce = None
     mic = None
     eapol_payload = None
+
+    message1_pending = False
     message2_found = False
 
     for pkt in packets:
@@ -70,42 +71,46 @@ def extract_handshake_info(capfile):
             if client_mac is None and src_mac != ap_mac:
                 client_mac = src_mac
 
-            # Get EAPOL bytes properly
             eapol_bytes = bytes(pkt[EAPOL])
-            
-            # Parse key info (at offset 5-6 in EAPOL)
             if len(eapol_bytes) < 7:
                 continue
-                
+
             key_info = int.from_bytes(eapol_bytes[5:7], byteorder='big')
-            
-            # Check message types using correct bit positions
+
             key_ack = bool(key_info & (1 << 7))   # bit 7
             key_mic = bool(key_info & (1 << 8))   # bit 8  
             install = bool(key_info & (1 << 6))   # bit 6
             secure = bool(key_info & (1 << 9))    # bit 9
-            
+
             is_from_ap = (src_mac == ap_mac)
 
-            # Message 1: from AP, ACK=1, MIC=0
-            if is_from_ap and key_ack and not key_mic and anonce is None:
+            # -------- Message 1 --------
+            if is_from_ap and key_ack and not key_mic:
+                # If a new message 1 arrives before a message 2 → reset old data
+                if message1_pending and not message2_found:
+                    anonce = None  # discard previous incomplete Message 1
+                # Save this as the current message 1
                 if len(eapol_bytes) >= 49:
-                    anonce = eapol_bytes[17:49]  # Nonce at offset 17-48
+                    anonce = eapol_bytes[17:49]
+                    message1_pending = True
+                    message2_found = False
 
-            # Message 2: from client, MIC=1, Install=0, Secure=0  
-            elif not is_from_ap and key_mic and not install and not secure and not message2_found:
+            # -------- Message 2 --------
+            elif (not is_from_ap and key_mic and not install and not secure
+                  and message1_pending and not message2_found):
                 if len(eapol_bytes) >= 97:
-                    snonce = eapol_bytes[17:49]    # Nonce at offset 17-48
-                    mic = eapol_bytes[81:97]       # MIC at offset 81-96
+                    snonce = eapol_bytes[17:49]
+                    mic = eapol_bytes[81:97]
                     eapol_payload = bytearray(eapol_bytes)
-                    eapol_payload[81:97] = b'\x00' * 16  # Zero out MIC field for verification
-                    message2_found = True
+                    eapol_payload[81:97] = b'\x00' * 16
+                    message2_found = True  # we have a complete pair!
 
-    if None in [ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload]:
-        print(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload)
-        raise ValueError("⚠️ Could not extract all fields from handshake.")
+    # Only return if we have a full pair
+    if not message2_found or None in [ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload]:
+        raise ValueError("⚠️ No complete handshake found.")
 
     return ssid, ap_mac, client_mac, anonce, snonce, mic, bytes(eapol_payload)
+
 
 
 def crack_with_bruteforce(ssid, ap_mac, client_mac, anonce, snonce, mic, eapol_payload,

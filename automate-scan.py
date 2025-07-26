@@ -131,7 +131,7 @@ if __name__ == "__main__":
         exit(1)
 
     client_mac = clients[client_idx]
-    deauth_cmd = f"sudo ./venv/bin/python3 custom-deauth.py {bssid} {client_mac} {args.mon} 50"
+    deauth_cmd = f"sudo ./venv/bin/python3 custom-deauth.py {bssid} {client_mac} {args.mon} 100"
 
     print(f"\n[🛑] Suggested Deauth Command:\n{deauth_cmd}\n\n")
 
